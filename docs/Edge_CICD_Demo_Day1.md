@@ -63,26 +63,21 @@ To ensure every commit is automatically validated and built.
 
 ## Problem
 
-```text
 Using "latest" is unreliable and non-deterministic.
-```
 
 ## Solution
 
-```text
-Use commit SHA for tagging
-```
+Use commit SHA for internal tracking and release version for production.
 
 ## Result
 
-```text
-edge-demo-<commit-sha>
-```
+- Internal: commit SHA (traceability)
+- External: release tag (e.g. v1.0.0)
 
 ### Why?
 
-* Each build is uniquely identifiable
-* Enables rollback and traceability
+- SHA ensures traceability
+- Version tag provides human-readable releases
 
 ---
 
