@@ -1,4 +1,4 @@
-name: CI Build
+name: CI Build (Docker)
 
 on:
   push:
@@ -10,34 +10,38 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    env:
-      IS_PR: ${{ github.event_name == 'pull_request' }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake build-essential
+      # 🔥 开启 Buildx（支持 cache）
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Configure project
-        run: cmake -S . -B build
+      # 🔥 Docker cache（核心加速）
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-docker-${{ github.ref_name }}
+          restore-keys: |
+            ${{ runner.os }}-docker-
 
-      - name: Build project
-        run: cmake --build build
-
-      - name: Run executable
-        run: ./build/app
-
-      - name: Run strict checks (PR only)
-        if: env.IS_PR == 'true'
-        run: echo "Running extended checks..."
-
+      # 🔥 build + load（关键）
       - name: Build Docker image
-        run: docker build -t edge-demo .
+        run: |
+          docker buildx build \
+            --cache-from=type=local,src=/tmp/.buildx-cache \
+            --cache-to=type=local,dest=/tmp/.buildx-cache-new \
+            --load \
+            -t edge-demo .
 
-      - name: Tag Docker image with SHA
+      # 🔥 移动 cache（重要）
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      # 🔥 SHA tag
+      - name: Tag image with SHA
         run: docker tag edge-demo edge-demo:${{ github.sha }}
-
-      - name: Security scan (placeholder)
-        run: echo "Scanning Docker image..."
