@@ -32,3 +32,12 @@ jobs:
       - name: Run strict checks (PR only)
         if: env.IS_PR == 'true'
         run: echo "Running extended checks..."
+
+      - name: Build Docker image
+        run: docker build -t edge-demo .
+
+      - name: Tag Docker image with SHA
+        run: docker tag edge-demo edge-demo:${{ github.sha }}
+
+      - name: Security scan (placeholder)
+        run: echo "Scanning Docker image..."
