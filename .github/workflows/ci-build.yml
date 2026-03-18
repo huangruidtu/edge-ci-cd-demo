@@ -47,7 +47,7 @@ jobs:
         run: docker tag edge-demo edge-demo:edge-demo-${{ github.sha }}
 
       - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@v0.24.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: edge-demo:edge-demo-${{ github.sha }}  #扫描你刚 build + tag 的本地 image
           format: table
