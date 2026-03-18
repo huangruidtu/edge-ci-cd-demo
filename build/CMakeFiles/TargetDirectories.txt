@@ -1,3 +1,0 @@
-/root/edge-ci-cd-demo/build/CMakeFiles/app.dir
-/root/edge-ci-cd-demo/build/CMakeFiles/edit_cache.dir
-/root/edge-ci-cd-demo/build/CMakeFiles/rebuild_cache.dir
