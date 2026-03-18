@@ -43,8 +43,8 @@ jobs:
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
       # 🔥 SHA tag
-      - name: Tag image with SHA
-        run: docker tag edge-demo edge-demo:${{ github.sha }}
+      - name: Tag image with service + SHA
+        run: docker tag edge-demo edge-demo:edge-demo-${{ github.sha }}
 
 
       - name: Configure AWS credentials
@@ -58,14 +58,10 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build Docker image
-        run: |
-          docker build -t edge-demo .
-
       - name: Tag image for ECR
         run: |
-          docker tag edge-demo ${{ steps.login-ecr.outputs.registry }}/edge-demo:${{ github.sha }}
+          docker tag edge-demo ${{ steps.login-ecr.outputs.registry }}/edge-demo:edge-demo-${{ github.sha }}
 
       - name: Push to ECR
         run: |
-          docker push ${{ steps.login-ecr.outputs.registry }}/edge-demo:${{ github.sha }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/edge-demo:edge-demo-${{ github.sha }}
