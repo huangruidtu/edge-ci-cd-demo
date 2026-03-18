@@ -15,15 +15,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 🧱 Checkout
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 🧱 Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 🧱 Cache
       - name: Cache Docker layers
         uses: actions/cache@v3
         with:
@@ -32,7 +29,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-docker-
 
-      # 🧱 Build（所有阶段都会用）
       - name: Build Docker image
         run: |
           docker buildx build \
@@ -41,28 +37,26 @@ jobs:
             --load \
             -t edge-demo .
 
-      # 🧱 Move cache
       - name: Move cache
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-      # 🧱 Tag（统一）
-      - name: Tag image
-        run: |
-          docker tag edge-demo edge-demo:${{ github.sha }}
+      # 👉 内部仍然用 SHA（但不暴露）
+      - name: Tag image (internal)
+        run: docker tag edge-demo edge-demo:${{ github.sha }}
 
-      # =========================================================
-      # 🔥 DEV（只 build，不 scan，不 push）
-      # =========================================================
-      - name: Dev info
+      # ===============================
+      # DEV（轻量）
+      # ===============================
+      - name: Dev stage
         if: github.ref == 'refs/heads/dev'
-        run: echo "Dev stage - fast feedback only"
+        run: echo "Dev pipeline - fast only"
 
-      # =========================================================
-      # 🔥 VALIDATION（PR + main）
-      # =========================================================
-      - name: Trivy scan (validation)
+      # ===============================
+      # VALIDATION（PR + main）
+      # ===============================
+      - name: Trivy scan
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
         uses: aquasecurity/trivy-action@master
         with:
@@ -72,9 +66,9 @@ jobs:
           ignore-unfixed: true
           severity: HIGH,CRITICAL
 
-      # =========================================================
-      # 🔥 RELEASE（唯一 push）
-      # =========================================================
+      # ===============================
+      # RELEASE（只用 version tag🔥）
+      # ===============================
       - name: Configure AWS credentials
         if: github.event_name == 'release'
         uses: aws-actions/configure-aws-credentials@v4
@@ -88,7 +82,8 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Tag image for ECR
+      # 👉 只使用 release tag（关键改动🔥）
+      - name: Tag image for ECR (release version)
         if: github.event_name == 'release'
         run: |
           docker tag edge-demo:${{ github.sha }} \
