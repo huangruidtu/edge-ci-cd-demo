@@ -46,6 +46,14 @@ jobs:
       - name: Tag image with service + SHA
         run: docker tag edge-demo edge-demo:edge-demo-${{ github.sha }}
 
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@v0.24.0
+        with:
+          image-ref: edge-demo:edge-demo-${{ github.sha }}  #扫描你刚 build + tag 的本地 image
+          format: table
+          exit-code: 1  # 有 HIGH / CRITICAL → CI 直接失败
+          ignore-unfixed: true # 避免官方还没修的漏洞 → 阻塞 CI
+          severity: HIGH,CRITICAL # 企业标准（不会因为 low 误报卡 pipeline）
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
