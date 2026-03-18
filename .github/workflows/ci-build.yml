@@ -2,13 +2,16 @@ name: CI Build
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "dev" ]
   pull_request:
     branches: [ "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    env:
+      IS_PR: ${{ github.event_name == 'pull_request' }}
 
     steps:
       - name: Checkout code
@@ -25,3 +28,7 @@ jobs:
 
       - name: Run executable
         run: ./build/app
+
+      - name: Run strict checks (PR only)
+        if: env.IS_PR == 'true'
+        run: echo "Running extended checks..."
