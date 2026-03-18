@@ -1,11 +1,14 @@
 # edge-ci-cd-demo
+
 Secure CI/CD pipeline for C++ edge application with GitHub Actions
 
-# Edge CI/CD Demo (Day 1)
+---
 
-This project demonstrates how a CI/CD pipeline evolves from a minimal setup to a more production-aligned workflow.
+# 🚀 Edge CI/CD Demo (Day 1)
 
-Instead of starting with a complex solution, we build incrementally and improve step by step.
+This project demonstrates how a CI/CD pipeline evolves from a minimal setup to a production-aligned workflow.
+
+Instead of building a complex system upfront, we incrementally improve the pipeline step by step, following real-world engineering practices.
 
 ---
 
@@ -104,7 +107,7 @@ Faster CI builds and reduced resource usage
 
 ---
 
-# 🔄 Step 4 — Push to AWS ECR
+# 🔄 Step 4 — Push to AWS ECR (Initial Design)
 
 ## Problem
 
@@ -146,61 +149,131 @@ Insecure images are blocked early (DevSecOps - shift left)
 
 ---
 
-# 🧩 Final CI Pipeline (Day 1)
+# ⚠️ Step 6 — Rethinking the Pipeline (Key Evolution 🔥)
 
-1. Checkout code
-2. Build Docker image (Buildx + cache)
-3. Tag image with service name + commit SHA
-4. Run security scan (Trivy)
-5. Authenticate with AWS
-6. Push image to ECR
+After implementing the initial pipeline, we identified a major issue:
+
+```text
+Images were being pushed to ECR on every CI run
+```
+
+### ❗ Problems
+
+* Unnecessary cloud usage (cost)
+* Risk of accidental deployment
+* No clear separation between validation and release
+
+---
+
+# 🚀 Final Design — 3-Level CI/CD Pipeline
+
+We refactored the pipeline into three distinct stages:
+
+---
+
+## 🟢 1. Development Stage (dev branch)
+
+* Fast feedback
+* Build only
+* No security scan
+* No push to ECR
+
+```text
+Goal: Speed and developer productivity
+```
+
+---
+
+## 🟡 2. Validation Stage (PR + main)
+
+Triggered by:
+
+* Pull Request → main
+* Direct push → main
+
+### What happens:
+
+* Full Docker build
+* Trivy security scan (fail on HIGH/CRITICAL)
+* ❌ No push to ECR
+
+```text
+Goal: Ensure code is safe before release
+```
+
+---
+
+## 🔴 3. Release Stage (GitHub Release)
+
+Triggered by:
+
+* Creating a GitHub Release (e.g. v1.0.0)
+
+### What happens:
+
+* Build Docker image
+* Run security scan
+* Push image to AWS ECR
+
+```text
+Goal: Controlled and intentional production release
+```
+
+---
+
+# 🧩 Final CI/CD Flow
+
+```
+Developer (git push)
+        ↓
+        ├── dev branch → Fast CI (build only)
+        │
+        ├── PR / main → Validation CI (build + scan)
+        │
+        └── Release → Production pipeline
+                         ↓
+                    Push to ECR
+```
 
 ---
 
 # 🧠 Key Design Decisions
 
-## Why SHA-based tagging?
+## Why separate CI and CD?
 
-Avoids mutable tags and ensures traceability.
+```text
+Validation ≠ Deployment
+```
+
+* CI ensures code quality
+* CD controls production release
 
 ---
 
-## Why caching?
+## Why not push on main?
 
-Improves CI efficiency and reduces build time.
+Even after merge, code is only **validated**, not released.
+
+```text
+Prevents accidental deployment
+```
 
 ---
 
-## Why security scan in CI?
+## Why release-based deployment?
 
-Detect vulnerabilities early before deployment.
+* Explicit action
+* Version-controlled
+* Safe rollback
 
 ---
 
 ## Why incremental design?
 
-Instead of over-engineering, we evolve the system step by step:
+We evolved the system step by step:
 
 ```text
-Manual → CI → Optimization → Security → Production-ready
-```
-
----
-
-# 📊 Architecture Overview
-
-```
-Developer (git push)
-        ↓
-GitHub Actions (CI)
-        ↓
-[ Build + Cache ]
-        ↓
-[ Tag (edge-demo-SHA) ]
-        ↓
-[ Security Scan (Trivy) ]
-        ↓
-[ Push to AWS ECR ]
+Manual → CI → Optimization → Security → Controlled Release
 ```
 
 ---
@@ -217,12 +290,13 @@ GitHub Actions (CI)
 
 # 🧠 Summary
 
-This project demonstrates a real-world CI/CD pipeline evolution:
+This project demonstrates a real-world CI/CD evolution:
 
 * From manual build → automated CI
 * From latest tag → immutable versioning
 * From slow builds → cached builds
-* From insecure images → integrated security scanning
+* From insecure images → integrated security
+* From uncontrolled deployment → release-driven delivery
 
-The system is intentionally designed to evolve towards full DevSecOps maturity.
+The pipeline now reflects production-grade DevOps and DevSecOps practices.
 
