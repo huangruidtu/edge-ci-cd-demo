@@ -154,10 +154,6 @@ We upgraded the pipeline to enforce security through multiple layers.
 
 Security checks were incomplete and not structured:
 
-- No dependency scanning
-- No separation between fast and strict checks
-- No enforced security gate
-
 ---
 
 ## ✅ Solution
@@ -373,6 +369,51 @@ Developer (git push)
 
 ---
 
+## 🔄 Dependency Management Strategy
+
+This project uses Dependabot to monitor and propose dependency updates.
+
+### Configuration
+
+- Update frequency: weekly
+- No grouping: each dependency update creates an individual pull request
+- Manual review and merge strategy
+
+### Workflow
+
+1. Dependabot creates pull requests for dependency updates
+2. Each PR is reviewed manually based on risk level
+3. Merge decisions follow a structured evaluation process
+4. After merge, CI pipeline validates:
+   - SAST (cppcheck)
+   - SCA (Trivy FS)
+   - Image scanning (Trivy image)
+   - Security gate enforcement
+
+### Decision Strategy
+
+Each dependency update is evaluated based on version type:
+
+- Patch updates (e.g. 1.2.3 → 1.2.4)
+  - Low risk
+  - Typically merged directly
+
+- Minor updates (e.g. 1.2.3 → 1.3.0)
+  - Medium risk
+  - Merge and validate via CI pipeline
+
+- Major updates (e.g. 1.2.3 → 2.0.0)
+  - High risk
+  - Require manual testing and validation before merge
+
+### Design Principles
+
+- Maintain full control over dependency updates
+- Avoid automatic merging of unknown changes
+- Use CI as the validation gate
+- Balance update frequency with system stability
+
+---
 # 📈 Future Improvements
 
 - Image signing (Cosign)
