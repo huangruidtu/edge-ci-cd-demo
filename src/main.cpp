@@ -1,6 +1,6 @@
 #include <iostream>
 
-# if 0
+# if 1
 int main() {
     std::cout << "CI/CD Demo Running!" << std::endl;
     return 0;
