@@ -154,10 +154,6 @@ We upgraded the pipeline to enforce security through multiple layers.
 
 Security checks were incomplete and not structured:
 
-- No dependency scanning
-- No separation between fast and strict checks
-- No enforced security gate
-
 ---
 
 ## ✅ Solution
