@@ -83,7 +83,7 @@ jobs:
       # ===============================
       - name: Trivy scan
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.20
         with:
           image-ref: edge-demo:${{ github.sha }}
           format: table
