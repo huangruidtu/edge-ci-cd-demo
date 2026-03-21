@@ -1,4 +1,4 @@
-name: CI Pipeline (3 Levels)
+name: CI Pipeline (Layered DevSecOps)
 
 on:
   push:
@@ -18,11 +18,43 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # ===============================
+      # SAST (runs on all branches)
+      # ===============================
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        run: |
+          cppcheck \
+            --enable=all \
+            --inconclusive \
+            --error-exitcode=1 \
+            --std=c++17 \
+            --language=c++ \
+            --suppress=missingIncludeSystem \
+            -i build \
+            ./src
+
+      # ===============================
+      # DEV stage (SAST only)
+      # ===============================
+      - name: Dev stage
+        if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+        run: echo "Dev pipeline - SAST only"
+
+      # ===============================
+      # Build (PR / main / release only)
+      # ===============================
       - name: Set up Docker Buildx
+        if: github.ref != 'refs/heads/dev' || github.event_name != 'push'
         uses: docker/setup-buildx-action@v3
 
       - name: Cache Docker layers
-        uses: actions/cache@v3
+        if: github.ref != 'refs/heads/dev' || github.event_name != 'push'
+        uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-docker-${{ github.ref_name }}
@@ -30,6 +62,7 @@ jobs:
             ${{ runner.os }}-docker-
 
       - name: Build Docker image
+        if: github.ref != 'refs/heads/dev' || github.event_name != 'push'
         run: |
           docker buildx build \
             --cache-from=type=local,src=/tmp/.buildx-cache \
@@ -38,27 +71,34 @@ jobs:
             -t edge-demo .
 
       - name: Move cache
+        if: github.ref != 'refs/heads/dev' || github.event_name != 'push'
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-      # 👉 内部仍然用 SHA（但不暴露）
       - name: Tag image (internal)
+        if: github.ref != 'refs/heads/dev' || github.event_name != 'push'
         run: docker tag edge-demo edge-demo:${{ github.sha }}
 
       # ===============================
-      # DEV（轻量）
+      # SCA (Trivy FS - dependency scan)
       # ===============================
-      - name: Dev stage
-        if: github.ref == 'refs/heads/dev'
-        run: echo "Dev pipeline - fast only"
+      - name: Trivy FS scan
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
 
       # ===============================
-      # VALIDATION（PR + main）
+      # Image Scan (Trivy image scan)
       # ===============================
-      - name: Trivy scan
+      - name: Trivy image scan
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: edge-demo:${{ github.sha }}
           format: table
@@ -67,7 +107,7 @@ jobs:
           severity: HIGH,CRITICAL
 
       # ===============================
-      # RELEASE（只用 version tag🔥）
+      # Release stage (strictest)
       # ===============================
       - name: Configure AWS credentials
         if: github.event_name == 'release'
@@ -82,7 +122,6 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # 👉 只使用 release tag（关键改动🔥）
       - name: Tag image for ECR (release version)
         if: github.event_name == 'release'
         run: |
