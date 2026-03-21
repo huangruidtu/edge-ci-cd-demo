@@ -11,7 +11,32 @@ on:
     types: [ published ]
 
 jobs:
+  sast:
+    name: Run cppcheck SAST
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        run: |
+          cppcheck \
+            --enable=all \
+            --inconclusive \
+            --error-exitcode=1 \
+            --std=c++17 \
+            --language=c++ \
+            --suppress=missingIncludeSystem \
+            -i build \
+            ./src
   build:
+    needs: sast 
     runs-on: ubuntu-latest
 
     steps:
@@ -25,7 +50,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-docker-${{ github.ref_name }}
+          key: ${{ runner.os }}-docker-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-docker-
 
@@ -58,7 +83,7 @@ jobs:
       # ===============================
       - name: Trivy scan
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: edge-demo:${{ github.sha }}
           format: table
