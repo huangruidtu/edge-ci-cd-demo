@@ -1,14 +1,14 @@
 version: 2
 
 updates:
-  # 🐳 Docker（你的项目最重要）
+  # 🐳 Docker dependencies
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
 
-  # ⚙️ GitHub Actions（CI依赖）
+  # ⚙️ GitHub Actionsdependencies
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
