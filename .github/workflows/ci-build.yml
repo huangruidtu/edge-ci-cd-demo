@@ -3,12 +3,10 @@ name: CI Pipeline (Layered DevSecOps)
 on:
   push:
     branches: [ "dev", "main" ]
-
+    tags:
+      - "v*"
   pull_request:
     branches: [ "main" ]
-
-  release:
-    types: [ published ]
 
 jobs:
   build:
@@ -19,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
 
       # ===============================
-      # SAST (runs on all branches)
+      # SAST (always run)
       # ===============================
       - name: Install cppcheck
         run: |
@@ -39,49 +37,45 @@ jobs:
             ./src
 
       # ===============================
-      # DEV stage (SAST only)
+      # Dev stage (dev branch only)
       # ===============================
       - name: Dev stage
-        if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/dev'
         run: echo "Dev pipeline - SAST only"
 
       # ===============================
-      # Build (PR / main / release only)
+      # Build (main / PR / tag)
       # ===============================
       - name: Set up Docker Buildx
-        if: github.ref != 'refs/heads/dev' || github.event_name != 'push'
-        uses: docker/setup-buildx-action@v3
+        if: github.ref != 'refs/heads/dev'
+        uses: docker/setup-buildx-action@v4
 
       - name: Cache Docker layers
-        if: github.ref != 'refs/heads/dev' || github.event_name != 'push'
-        uses: actions/cache@v4
+        if: github.ref != 'refs/heads/dev'
+        uses: actions/cache@v5
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-docker-${{ github.ref_name }}
           restore-keys: |
             ${{ runner.os }}-docker-
 
-      - name: Build Docker image
-        if: github.ref != 'refs/heads/dev' || github.event_name != 'push'
+      - name: Build Docker image (internal)
+        if: github.ref != 'refs/heads/dev'
         run: |
           docker buildx build \
             --cache-from=type=local,src=/tmp/.buildx-cache \
             --cache-to=type=local,dest=/tmp/.buildx-cache-new \
             --load \
-            -t edge-demo .
+            -t edge-demo:${{ github.sha }} .
 
       - name: Move cache
-        if: github.ref != 'refs/heads/dev' || github.event_name != 'push'
+        if: github.ref != 'refs/heads/dev'
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-      - name: Tag image (internal)
-        if: github.ref != 'refs/heads/dev' || github.event_name != 'push'
-        run: docker tag edge-demo edge-demo:${{ github.sha }}
-
       # ===============================
-      # SCA (Trivy FS - dependency scan)
+      # Dependency scanning (SCA)
       # ===============================
       - name: Trivy FS scan
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
@@ -94,7 +88,7 @@ jobs:
           severity: HIGH,CRITICAL
 
       # ===============================
-      # Image Scan (Trivy image scan)
+      # Image scanning
       # ===============================
       - name: Trivy image scan
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
@@ -107,28 +101,36 @@ jobs:
           severity: HIGH,CRITICAL
 
       # ===============================
-      # Release stage (strictest)
+      # Release (tag-driven only)
       # ===============================
       - name: Configure AWS credentials
-        if: github.event_name == 'release'
-        uses: aws-actions/configure-aws-credentials@v4
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        if: github.event_name == 'release'
+        if: startsWith(github.ref, 'refs/tags/')
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Tag image for ECR (release version)
-        if: github.event_name == 'release'
+      - name: Build Docker image (release)
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
-          docker tag edge-demo:${{ github.sha }} \
-          ${{ steps.login-ecr.outputs.registry }}/edge-demo:${{ github.event.release.tag_name }}
+          docker buildx build \
+            --load \
+            -t edge-demo:${{ github.ref_name }} .
 
-      - name: Push to ECR
-        if: github.event_name == 'release'
+      - name: Tag image for ECR
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
-          docker push ${{ steps.login-ecr.outputs.registry }}/edge-demo:${{ github.event.release.tag_name }}
+          docker tag edge-demo:${{ github.ref_name }} \
+          ${{ steps.login-ecr.outputs.registry }}/edge-demo:${{ github.ref_name }}
+
+      - name: Push image to ECR
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          docker push \
+          ${{ steps.login-ecr.outputs.registry }}/edge-demo:${{ github.ref_name }}
