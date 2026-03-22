@@ -154,10 +154,6 @@ We upgraded the pipeline to enforce security through multiple layers.
 
 Security checks were incomplete and not structured:
 
-- No dependency scanning
-- No separation between fast and strict checks
-- No enforced security gate
-
 ---
 
 ## ✅ Solution
@@ -236,7 +232,7 @@ Pipeline fails on HIGH / CRITICAL vulnerabilities
 
 ---
 
-## 🔴 Release Stage
+## 🔴 Tag Stage
 
 **Triggered by:**
 
@@ -251,80 +247,116 @@ Pipeline fails on HIGH / CRITICAL vulnerabilities
 
 ---
 
+# 🔄 Step 7 — Add ARMv7 Binary Packaging and S3 Artifact Publishing
+
+## Problem
+
+```text
+The existing release flow only publishes container images, but the target Ubuntu edge device needs a versioned ARMv7 binary artifact for native deployment.
+```
+---
+## Solution
+
+- Keep the layered CI design unchanged
+- Add ARMv7 cross-compilation in the tag stage
+- Package the binary as a versioned release artifact
+- Upload the binary artifact to AWS S3
+- Preserve ECR image publishing for the container delivery path
+
+## Result
+
+Release stage now produces both container images and device-ready ARMv7 binary artifacts.
+
+## 🔴 Tag Stage
+
+**Triggered by:**
+
+- Git tag / release (e.g. `v1.0.0`)
+
+**What happens:**
+
+- Full validation (same as PR/main)
+- ARMv7 binary cross-build
+- Versioned binary artifact packaging
+- Push binary artifact to AWS S3
+- Push image to AWS ECR
+
+**Goal:** Promote only trusted artifacts and publish deployment-ready outputs for both container and edge-device delivery paths.
+---
+
 ## 🧩 Final CI Flow
 
-```
-Developer (git push)
-        |
-        v
-   +---------------+
-   |  dev branch   |
-   +---------------+
-           |
-           v
-     +------------+
-     | SAST only  |
-     +------------+
+```text
+                     +------------+
+                     |  Dev Stage |
+                     +------------+
+                            |
+                            v
+                     +------------+
+                     |    SAST    |
+                     +------------+
 
 
-   +---------------+
-   |   PR / main   |
-   +---------------+
-           |
-           v
-     +------------+
-     |    SAST    |
-     +------------+
-           |
-           v
-     +------------+
-     |   BUILD    |
-     +------------+
-           |
-           v
-     +------------+
-     |    SCA     |
-     +------------+
-           |
-           v
-     +------------+
-     | IMAGE SCAN |
-     +------------+
-           |
-           v
-     +------------+
-     |    GATE    |
-     +------------+
+                     +-------------------+
+                     | PR / Main Stage   |
+                     +-------------------+
+                            |
+                            v
+                     +------------+
+                     |    SAST    |
+                     +------------+
+                            |
+                            v
+                     +------------+
+                     |   BUILD    |
+                     +------------+
+                            |
+                            v
+                     +------------+
+                     |    SCAN    |
+                     +------------+
+                            |
+                            v
+                     +------------+
+                     |    GATE    |
+                     +------------+
 
 
-   +---------------+
-   |    Release    |
-   +---------------+
-           |
-           v
-     +------------+
-     |    SAST    |
-     +------------+
-           |
-           v
-     +------------+
-     |   BUILD    |
-     +------------+
-           |
-           v
-     +------------+
-     |    SCAN    |
-     +------------+
-           |
-           v
-     +------------+
-     |    GATE    |
-     +------------+
-           |
-           v
-     +---------------+
-     |  PUSH (ECR)   |
-     +---------------+
+                     +------------+
+                     | Tag Stage  |
+                     +------------+
+                            |
+                            v
+                     +------------+
+                     |    SAST    |
+                     +------------+
+                            |
+                            v
+                     +------------+
+                     |   BUILD    |
+                     +------------+
+                            |
+                            v
+                     +------------+
+                     |    SCAN    |
+                     +------------+
+                            |
+                            v
+                     +------------+
+                     |    GATE    |
+                     +------------+
+                            |
+           +----------------+----------------+
+           |                                 |
+           v                                 v
++------------------------+       +------------------------+
+| Edge Binary Packaging  |       | Container Image Release|
++------------------------+       +------------------------+
+           |                                 |
+           v                                 v
++------------------------+       +------------------------+
+| Push ARMv7 Binary to S3|       | Push Image to ECR      |
++------------------------+       +------------------------+
 ```
 
 ---

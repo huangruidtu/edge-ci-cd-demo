@@ -8,6 +8,13 @@ on:
   pull_request:
     branches: [ "main" ]
 
+env:
+  IMAGE_NAME: edge-demo
+  BINARY_NAME: edge-app
+  ARM_BUILD_DIR: build-armv7
+  AWS_REGION: eu-north-1
+  S3_BUCKET: edge-cicd-demo-artifacts
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -34,7 +41,7 @@ jobs:
             --language=c++ \
             --suppress=missingIncludeSystem \
             -i build \
-            ./src
+            ./
 
       # ===============================
       # Dev stage (dev branch only)
@@ -66,7 +73,7 @@ jobs:
             --cache-from=type=local,src=/tmp/.buildx-cache \
             --cache-to=type=local,dest=/tmp/.buildx-cache-new \
             --load \
-            -t edge-demo:${{ github.sha }} .
+            -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
 
       - name: Move cache
         if: github.ref != 'refs/heads/dev'
@@ -78,7 +85,7 @@ jobs:
       # Dependency scanning (SCA)
       # ===============================
       - name: Trivy FS scan
-        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: fs
@@ -91,17 +98,17 @@ jobs:
       # Image scanning
       # ===============================
       - name: Trivy image scan
-        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         uses: aquasecurity/trivy-action@0.35.0
         with:
-          image-ref: edge-demo:${{ github.sha }}
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: table
           exit-code: 1
           ignore-unfixed: true
           severity: HIGH,CRITICAL
 
       # ===============================
-      # Release (tag-driven only)
+      # Tag stage (tag-driven only)
       # ===============================
       - name: Configure AWS credentials
         if: startsWith(github.ref, 'refs/tags/')
@@ -111,6 +118,50 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # ---- ARMv7 binary build for edge deployment ----
+      - name: Install ARMv7 cross-build toolchain
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            make \
+            gcc-arm-linux-gnueabihf \
+            g++-arm-linux-gnueabihf \
+            binutils-arm-linux-gnueabihf
+
+      - name: Configure ARMv7 build
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cmake -S . -B ${{ env.ARM_BUILD_DIR }} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=arm \
+            -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
+            -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++
+
+      - name: Build ARMv7 binary
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cmake --build ${{ env.ARM_BUILD_DIR }} --parallel
+
+      - name: Package ARMv7 binary artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p dist/${{ github.ref_name }}
+          # Adjust this source path if the real CMake target output name is not "app"
+          cp ${{ env.ARM_BUILD_DIR }}/app dist/${{ github.ref_name }}/${{ env.BINARY_NAME }}
+          chmod +x dist/${{ github.ref_name }}/${{ env.BINARY_NAME }}
+          ls -l dist/${{ github.ref_name }}
+
+      - name: Upload ARMv7 binary to S3
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          aws s3 cp \
+            dist/${{ github.ref_name }}/${{ env.BINARY_NAME }} \
+            s3://edge-cicd-demo-artifacts/${{ env.IMAGE_NAME }}/releases/${{ github.ref_name }}/${{ env.BINARY_NAME }}
+
+      # ---- keep existing ECR image release path ----
       - name: Login to Amazon ECR
         if: startsWith(github.ref, 'refs/tags/')
         id: login-ecr
@@ -121,16 +172,16 @@ jobs:
         run: |
           docker buildx build \
             --load \
-            -t edge-demo:${{ github.ref_name }} .
+            -t ${{ env.IMAGE_NAME }}:${{ github.ref_name }} .
 
       - name: Tag image for ECR
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          docker tag edge-demo:${{ github.ref_name }} \
-          ${{ steps.login-ecr.outputs.registry }}/edge-demo:${{ github.ref_name }}
+          docker tag ${{ env.IMAGE_NAME }}:${{ github.ref_name }} \
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
 
       - name: Push image to ECR
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           docker push \
-          ${{ steps.login-ecr.outputs.registry }}/edge-demo:${{ github.ref_name }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
