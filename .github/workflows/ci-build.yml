@@ -161,46 +161,6 @@ jobs:
             dist/${{ github.ref_name }}/${{ env.BINARY_NAME }} \
             s3://edge-cicd-demo-artifacts/${{ env.IMAGE_NAME }}/releases/${{ github.ref_name }}/${{ env.BINARY_NAME }}
 
-      # ==========================================================
-      # CD: Deploy versioned ARMv7 binary to the edge device
-      # This section only runs for release tags (refs/tags/v*)
-      # Flow:
-      # 1. Prepare SSH private key from GitHub Secrets
-      # 2. Copy the built binary to the target device via SCP
-      # 3. Replace the existing binary on the device
-      # 4. Restart the app using existing device-side scripts
-      # ==========================================================
-
-      - name: Set up SSH key for edge deployment
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EDGE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -p ${{ secrets.EDGE_PORT }} ${{ secrets.EDGE_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Copy ARMv7 binary to target device
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          scp -i ~/.ssh/id_ed25519 -P ${{ secrets.EDGE_PORT }} \
-            dist/${{ github.ref_name }}/${{ env.BINARY_NAME }} \
-            ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }}:/home/devops/edge-app/${{ env.BINARY_NAME }}.new
-
-      - name: Deploy binary and restart app on target device
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.EDGE_PORT }} \
-            ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }} << 'EOF'
-            set -e
-            chmod +x /home/devops/edge-app/edge-app.new
-            mv /home/devops/edge-app/edge-app.new /home/devops/edge-app/edge-app
-            chmod +x /home/devops/edge-app/edge-app
-            cd /home/devops/edge-app/scripts
-            ./stop.sh || true
-            ./start.sh
-          EOF
-
-
       # ---- keep existing ECR image release path ----
       - name: Login to Amazon ECR
         if: startsWith(github.ref, 'refs/tags/')
@@ -225,3 +185,63 @@ jobs:
         run: |
           docker push \
             ${{ steps.login-ecr.outputs.registry }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+
+
+  deploy_edge:
+    name: Deploy versioned binary to edge device
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: [self-hosted, Linux, X64]
+
+    steps:
+      # ==========================================================
+      # CD: Deploy versioned ARMv7 binary to the edge device
+      # This job runs on a self-hosted runner because the target
+      # board is only reachable inside the local/private LAN.
+      # Flow:
+      # 1. Download the versioned binary from S3
+      # 2. Copy the binary to the target device via SCP
+      # 3. Replace the existing binary on the device
+      # 4. Restart the app using existing device-side scripts
+      # ==========================================================
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-north-1
+
+      - name: Set up SSH key for edge deployment
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EDGE_SSH_PRIVATE_KEY }}" > ~/.ssh/edge_cd_deploy_key
+          chmod 600 ~/.ssh/edge_cd_deploy_key
+          ssh-keyscan -p ${{ secrets.EDGE_PORT }} ${{ secrets.EDGE_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Download versioned binary from S3
+        run: |
+          mkdir -p dist/${{ github.ref_name }}
+          aws s3 cp \
+            s3://edge-cicd-demo-artifacts/edge-demo/releases/${{ github.ref_name }}/edge-app \
+            dist/${{ github.ref_name }}/edge-app
+          chmod +x dist/${{ github.ref_name }}/edge-app
+
+      - name: Copy binary to target device
+        run: |
+          scp -i ~/.ssh/edge_cd_deploy_key -P ${{ secrets.EDGE_PORT }} \
+            dist/${{ github.ref_name }}/edge-app \
+            ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }}:/home/devops/edge-app/edge-app.new
+
+      - name: Deploy binary and restart app on target device
+        run: |
+          ssh -i ~/.ssh/edge_cd_deploy_key -p ${{ secrets.EDGE_PORT }} \
+            ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }} << 'EOF'
+            set -e
+            chmod +x /home/devops/edge-app/edge-app.new
+            mv /home/devops/edge-app/edge-app.new /home/devops/edge-app/edge-app
+            chmod +x /home/devops/edge-app/edge-app
+            cd /home/devops/edge-app/scripts
+            ./stop.sh || true
+            ./start.sh
+          EOF
