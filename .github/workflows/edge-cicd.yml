@@ -1,4 +1,4 @@
-name: CI Pipeline (Layered DevSecOps)
+name: Edge CI/CD Pipeline (Layered DevSecOps)
 
 on:
   push:
