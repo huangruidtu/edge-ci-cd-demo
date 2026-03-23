@@ -107,30 +107,67 @@ jobs:
           ignore-unfixed: true
           severity: HIGH,CRITICAL
 
+  build_armv7_compatible:
+    name: Build ARMv7 release artifact
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: [self-hosted, edge-lan]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Prepare native build directory
+        run: |
+          rm -rf build-native
+          mkdir -p build-native
+
+      - name: Patch CMake minimum version for legacy compatibility attempt
+        run: |
+          cp CMakeLists.txt CMakeLists.txt.bak
+          sed -i '1s/3.10/2.8.12/' CMakeLists.txt
+          head -5 CMakeLists.txt
+
+      - name: Configure ARMv7 build
+        run: |
+          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build ARMv7 artifact
+        run: |
+          cmake --build build-native
+
+      - name: Package ARMv7 binary artifact
+        run: |
+          mkdir -p dist/${{ github.ref_name }}
+          cp build-native/app dist/${{ github.ref_name }}/${{ env.BINARY_NAME }}
+          chmod +x dist/${{ github.ref_name }}/${{ env.BINARY_NAME }}
+          ls -l dist/${{ github.ref_name }}
+
+      - name: Upload ARMv7 binary to S3
+        run: |
+          aws s3 cp \
+            dist/${{ github.ref_name }}/${{ env.BINARY_NAME }} \
+            s3://${{ env.S3_BUCKET }}/${{ env.IMAGE_NAME }}/releases/${{ github.ref_name }}/${{ env.BINARY_NAME }}
+
   deploy_edge:
     name: Deploy versioned binary to edge device
     needs: build_armv7_compatible
     if: startsWith(github.ref, 'refs/tags/')
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, edge-lan]
 
     steps:
-      # ==========================================================
-      # CD: Deploy versioned ARMv7 binary to the edge device
-      # This job runs on a self-hosted runner because the target
-      # board is only reachable inside the local/private LAN.
-      # Flow:
-      # 1. Download the versioned binary from S3
-      # 2. Copy the binary to the target device via SCP
-      # 3. Replace the existing binary on the device
-      # 4. Restart the app using existing device-side scripts
-      # ==========================================================
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-north-1
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Set up SSH key for edge deployment
         run: |
@@ -143,14 +180,14 @@ jobs:
         run: |
           mkdir -p dist/${{ github.ref_name }}
           aws s3 cp \
-            s3://edge-cicd-demo-artifacts/edge-demo/releases/${{ github.ref_name }}/edge-app \
-            dist/${{ github.ref_name }}/edge-app
-          chmod +x dist/${{ github.ref_name }}/edge-app
+            s3://${{ env.S3_BUCKET }}/${{ env.IMAGE_NAME }}/releases/${{ github.ref_name }}/${{ env.BINARY_NAME }} \
+            dist/${{ github.ref_name }}/${{ env.BINARY_NAME }}
+          chmod +x dist/${{ github.ref_name }}/${{ env.BINARY_NAME }}
 
       - name: Copy binary to target device runtime path
         run: |
           scp -i ~/.ssh/edge_cd_deploy_key -P ${{ secrets.EDGE_PORT }} \
-            dist/${{ github.ref_name }}/edge-app \
+            dist/${{ github.ref_name }}/${{ env.BINARY_NAME }} \
             ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }}:/home/devops/edge-app/current/edge-app.new
 
       - name: Deploy binary and restart app on target device
@@ -165,51 +202,3 @@ jobs:
             ./stop.sh || true
             ./start.sh
           EOF
-
-  build_armv7_compatible:
-    name: Build compatible ARMv7 binary
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: [self-hosted, Linux, edge-arm-build]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Prepare compatible native build directory
-        run: |
-          rm -rf build-native
-          mkdir -p build-native
-
-      - name: Patch CMake minimum version for legacy board environment
-        run: |
-          cp CMakeLists.txt CMakeLists.txt.bak
-          sed -i '1s/3.10/2.8.12/' CMakeLists.txt
-          head -5 CMakeLists.txt
-
-      - name: Configure compatible ARMv7 build
-        run: |
-          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build compatible ARMv7 binary
-        run: |
-          cmake --build build-native
-
-      - name: Package compatible ARMv7 binary artifact
-        run: |
-          mkdir -p dist/${{ github.ref_name }}
-          cp build-native/app dist/${{ github.ref_name }}/${{ env.BINARY_NAME }}
-          chmod +x dist/${{ github.ref_name }}/${{ env.BINARY_NAME }}
-          ls -l dist/${{ github.ref_name }}
-
-      - name: Upload compatible ARMv7 binary to S3
-        run: |
-          aws s3 cp \
-            dist/${{ github.ref_name }}/${{ env.BINARY_NAME }} \
-            s3://edge-cicd-demo-artifacts/${{ env.IMAGE_NAME }}/releases/${{ github.ref_name }}/${{ env.BINARY_NAME }}
