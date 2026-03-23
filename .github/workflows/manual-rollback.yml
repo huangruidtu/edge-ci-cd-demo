@@ -1,0 +1,71 @@
+name: Manual Rollback for Versioned Binary Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version to roll back to (e.g. v1.2.4)'
+        required: true
+      target_host:
+        description: 'Target edge device host'
+        required: false
+        default: '192.168.8.167'
+
+env:
+  IMAGE_NAME: edge-demo
+  BINARY_NAME: edge-app
+  S3_BUCKET: edge-cicd-demo-artifacts
+
+jobs:
+  rollback_edge_binary:
+    name: Roll back binary on target edge device
+    runs-on: [self-hosted, edge-lan]
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Set up SSH key for rollback
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EDGE_SSH_PRIVATE_KEY }}" > ~/.ssh/edge_cd_deploy_key
+          chmod 600 ~/.ssh/edge_cd_deploy_key
+          ssh-keyscan -p ${{ secrets.EDGE_PORT }} ${{ github.event.inputs.target_host }} >> ~/.ssh/known_hosts
+
+      - name: Download selected binary version from S3
+        run: |
+          mkdir -p rollback/${{ github.event.inputs.release_version }}
+          aws s3 cp \
+            s3://${{ env.S3_BUCKET }}/${{ env.IMAGE_NAME }}/releases/${{ github.event.inputs.release_version }}/${{ env.BINARY_NAME }} \
+            rollback/${{ github.event.inputs.release_version }}/${{ env.BINARY_NAME }}
+          chmod +x rollback/${{ github.event.inputs.release_version }}/${{ env.BINARY_NAME }}
+          ls -l rollback/${{ github.event.inputs.release_version }}
+
+      - name: Copy rollback binary to target device
+        run: |
+          scp -i ~/.ssh/edge_cd_deploy_key -P ${{ secrets.EDGE_PORT }} \
+            rollback/${{ github.event.inputs.release_version }}/${{ env.BINARY_NAME }} \
+            ${{ secrets.EDGE_USER }}@${{ github.event.inputs.target_host }}:/home/devops/edge-app/current/edge-app.rollback
+
+      - name: Activate rollback version on target device
+        run: |
+          ssh -i ~/.ssh/edge_cd_deploy_key -p ${{ secrets.EDGE_PORT }} \
+            ${{ secrets.EDGE_USER }}@${{ github.event.inputs.target_host }} << 'EOF'
+            set -e
+            chmod +x /home/devops/edge-app/current/edge-app.rollback
+            mv /home/devops/edge-app/current/edge-app.rollback /home/devops/edge-app/current/edge-app
+            chmod +x /home/devops/edge-app/current/edge-app
+            cd /home/devops/edge-app/scripts
+            ./stop.sh || true
+            ./start.sh
+          EOF
+
+      - name: Print rollback summary
+        run: |
+          echo "Rollback completed."
+          echo "Target host: ${{ github.event.inputs.target_host }}"
+          echo "Rolled back to version: ${{ github.event.inputs.release_version }}"
