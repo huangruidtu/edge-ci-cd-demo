@@ -227,20 +227,20 @@ jobs:
             dist/${{ github.ref_name }}/edge-app
           chmod +x dist/${{ github.ref_name }}/edge-app
 
-      - name: Copy binary to target device
+      - name: Copy binary to target device runtime path
         run: |
           scp -i ~/.ssh/edge_cd_deploy_key -P ${{ secrets.EDGE_PORT }} \
             dist/${{ github.ref_name }}/edge-app \
-            ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }}:/home/devops/edge-app/edge-app.new
+            ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }}:/home/devops/edge-app/current/edge-app.new
 
       - name: Deploy binary and restart app on target device
         run: |
           ssh -i ~/.ssh/edge_cd_deploy_key -p ${{ secrets.EDGE_PORT }} \
             ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }} << 'EOF'
             set -e
-            chmod +x /home/devops/edge-app/edge-app.new
-            mv /home/devops/edge-app/edge-app.new /home/devops/edge-app/edge-app
-            chmod +x /home/devops/edge-app/edge-app
+            chmod +x /home/devops/edge-app/current/edge-app.new
+            mv /home/devops/edge-app/current/edge-app.new /home/devops/edge-app/current/edge-app
+            chmod +x /home/devops/edge-app/current/edge-app
             cd /home/devops/edge-app/scripts
             ./stop.sh || true
             ./start.sh
