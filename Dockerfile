@@ -1,5 +1,5 @@
 # ---------- Build stage ----------
-FROM ubuntu:22.04 AS builder
+FROM ubuntu:24.04 AS builder
 
 RUN apt-get update && apt-get install -y \
     cmake \
@@ -12,7 +12,7 @@ COPY . .
 RUN cmake -S . -B build && cmake --build build
 
 # ---------- Runtime stage ----------
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 WORKDIR /app
 
